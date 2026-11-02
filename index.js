@@ -181,6 +181,20 @@ app.delete('/delete-book/:id', async (req, res) => {
   }
 });
 
+app.post('/borrow-book', async (req, res) => {
+  try {
+    const borrowData = {
+      ...req.body,
+      returned: false,
+    };
+    const result = await db.collection('borrows').insertOne(borrowData);
+    res.json({ success: true, id: result.insertedId });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
 app.get('/', (req, res) => {
   res.send('Hello World Shahin! This is my first Node.js server.');
 });

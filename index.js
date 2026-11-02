@@ -129,7 +129,7 @@ app.get('/all-book/:id', async (req, res) => {
   }
 });
 
-// ✅ ব্যবহারকারীর নিজের সব বই
+
 app.get('/my-books/:userEmail', async (req, res) => {
   try {
     const { userEmail } = req.params;
@@ -143,7 +143,7 @@ app.get('/my-books/:userEmail', async (req, res) => {
   }
 });
 
-// ✅ বই এডিট/আপডেট
+
 app.put('/edit-book/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -165,7 +165,6 @@ app.put('/edit-book/:id', async (req, res) => {
   }
 });
 
-// ✅ বই ডিলিট
 app.delete('/delete-book/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -193,6 +192,25 @@ app.post('/borrow-book', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+// সার্ভারের ফাইলে যোগ করুন
+app.patch('/decrement-copies/:id', async (req, res) => {
+  try {
+    const book = await Book.findById(req.params.id);
+    if (!book) {
+      return res.status(404).json({ success: false, message: 'Book not found' });
+    }
+    if (book.totalCopies <= 0) {
+      return res.status(400).json({ success: false, message: 'No copies left' });
+    }
+    book.totalCopies -= 1;
+    await book.save();
+    res.json({ success: true, totalCopies: book.totalCopies });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
 
 
 app.get('/', (req, res) => {

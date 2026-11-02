@@ -89,15 +89,17 @@ export async function connectToMongoDB() {
 const mongoClient = await connectToMongoDB();
 const db = mongoClient.db('booknook');
 const booksCollection = db.collection('books');
-
 app.post('/add-book', async (req, res) => {
   try {
     const data = req.body;
-    const result = await booksCollection.insertOne(data);
+    const result = await booksCollection.insertOne({
+      ...data,
+      createdAt: new Date() 
+    });
     res.status(201).json({
       success: true,
       message: 'Book added successfully',
-      book: { _id: result.insertedId, ...data }
+      book: { _id: result.insertedId, ...data, createdAt: new Date() }
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -127,7 +129,7 @@ app.get('/all-book/:id', async (req, res) => {
   }
 });
 
-
+// ✅ ব্যবহারকারীর নিজের সব বই
 app.get('/my-books/:userEmail', async (req, res) => {
   try {
     const { userEmail } = req.params;
@@ -141,7 +143,7 @@ app.get('/my-books/:userEmail', async (req, res) => {
   }
 });
 
-
+// ✅ বই এডিট/আপডেট
 app.put('/edit-book/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -163,6 +165,7 @@ app.put('/edit-book/:id', async (req, res) => {
   }
 });
 
+// ✅ বই ডিলিট
 app.delete('/delete-book/:id', async (req, res) => {
   try {
     const { id } = req.params;

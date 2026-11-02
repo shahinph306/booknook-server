@@ -62,7 +62,6 @@
 
 
 
-
 import express from 'express';
 import { MongoClient, ObjectId } from 'mongodb';
 import 'dotenv/config';
@@ -89,12 +88,14 @@ export async function connectToMongoDB() {
 const mongoClient = await connectToMongoDB();
 const db = mongoClient.db('booknook');
 const booksCollection = db.collection('books');
+const borrowsCollection = db.collection('borrows');
+
 app.post('/add-book', async (req, res) => {
   try {
     const data = req.body;
     const result = await booksCollection.insertOne({
       ...data,
-      createdAt: new Date() 
+      createdAt: new Date()
     });
     res.status(201).json({
       success: true,
@@ -115,7 +116,6 @@ app.get('/all-books', async (req, res) => {
   }
 });
 
-
 app.get('/all-book/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -128,7 +128,6 @@ app.get('/all-book/:id', async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
 
 app.get('/my-books/:userEmail', async (req, res) => {
   try {
@@ -143,12 +142,11 @@ app.get('/my-books/:userEmail', async (req, res) => {
   }
 });
 
-
 app.put('/edit-book/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
-    
+
     const result = await booksCollection.findOneAndUpdate(
       { _id: new ObjectId(id) },
       { $set: updateData },
@@ -180,38 +178,95 @@ app.delete('/delete-book/:id', async (req, res) => {
   }
 });
 
+// ✅ বুক করলে — কপি কমানো + borrow রেকর্ড
 app.post('/borrow-book', async (req, res) => {
   try {
-    const borrowData = {
-      ...req.body,
-      returned: false,
-    };
-    const result = await db.collection('borrows').insertOne(borrowData);
-    res.json({ success: true, id: result.insertedId });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+    const { bookId, bookTitle, authorName, bookImageUrl, borrowerName, borrowerEmail, borrowedAt, returnBy } = req.body;
 
-// সার্ভারের ফাইলে যোগ করুন
-app.patch('/decrement-copies/:id', async (req, res) => {
-  try {
-    const book = await Book.findById(req.params.id);
+    // ১. বইটি খুঁজে বের করুন
+    const book = await booksCollection.findOne({ _id: new ObjectId(bookId) });
     if (!book) {
       return res.status(404).json({ success: false, message: 'Book not found' });
     }
     if (book.totalCopies <= 0) {
       return res.status(400).json({ success: false, message: 'No copies left' });
     }
-    book.totalCopies -= 1;
-    await book.save();
-    res.json({ success: true, totalCopies: book.totalCopies });
+
+    // ২. কপি ১ কমান
+    await booksCollection.updateOne(
+      { _id: new ObjectId(bookId) },
+      { $inc: { totalCopies: -1 } }
+    );
+
+    // ৩. borrow রেকর্ড তৈরি
+    const borrowData = {
+      bookId,
+      bookTitle,
+      authorName,
+      bookImageUrl,
+      borrowerName,
+      borrowerEmail,
+      borrowedAt,
+      returnBy,
+      returned: false,
+      createdAt: new Date()
+    };
+
+    const result = await borrowsCollection.insertOne(borrowData);
+
+    res.json({ success: true, id: result.insertedId });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
+// ✅ রিটার্ন করলে — কপি বাড়ানো
+app.post('/return-book', async (req, res) => {
+  try {
+    const { bookId, borrowerEmail } = req.body;
 
+    // ১. borrow রেকর্ড আপডেট করুন
+    await borrowsCollection.updateOne(
+      { bookId, borrowerEmail, returned: false },
+      { $set: { returned: true, returnedAt: new Date() } }
+    );
+
+    // ২. কপি ১ বাড়ান
+    await booksCollection.updateOne(
+      { _id: new ObjectId(bookId) },
+      { $inc: { totalCopies: 1 } }
+    );
+
+    res.json({ success: true, message: 'Book returned successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ✅ পুরোনো PATCH রুটটি সংশোধন করা হয়েছে
+app.patch('/decrement-copies/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const book = await booksCollection.findOne({ _id: new ObjectId(id) });
+    if (!book) {
+      return res.status(404).json({ success: false, message: 'Book not found' });
+    }
+    if (book.totalCopies <= 0) {
+      return res.status(400).json({ success: false, message: 'No copies left' });
+    }
+
+    const updated = await booksCollection.findOneAndUpdate(
+      { _id: new ObjectId(id) },
+      { $inc: { totalCopies: -1 } },
+      { returnDocument: 'after' }
+    );
+
+    res.json({ success: true, totalCopies: updated.totalCopies });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 app.get('/', (req, res) => {
   res.send('Hello World Shahin! This is my first Node.js server.');

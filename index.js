@@ -217,6 +217,7 @@ app.get("/my-books/:userEmail", async (req, res) => {
   }
 });
 
+
 // =====================================
 // GET MY BORROWS
 // =====================================
@@ -234,20 +235,23 @@ app.get("/api/my-borrows", async (req, res) => {
     const normalizedEmail = userEmail.trim().toLowerCase();
 
     const borrows = await borrowsCollection
-      .find({ borrowerEmail: normalizedEmail })
+      .find({
+        borrowerEmail: normalizedEmail,
+      })
       .sort({ createdAt: -1 })
       .toArray();
 
     return res.status(200).json({
       success: true,
+      total: borrows.length,
       borrows,
     });
   } catch (error) {
-    console.error("❌ Get My Borrows Error:", error);
+    console.error("My Borrows Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load borrows.",
+      message: "Failed to load borrowed books.",
     });
   }
 });
@@ -476,22 +480,22 @@ app.post("/return-book", async (req, res) => {
   try {
     const { bookId, borrowerEmail } = req.body;
 
-    if (!bookId || !borrowerEmail) {
+    // Validation
+    if (
+      typeof bookId !== "string" ||
+      !ObjectId.isValid(bookId) ||
+      typeof borrowerEmail !== "string" ||
+      !borrowerEmail.trim()
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Book ID and borrower email are required.",
-      });
-    }
-
-    if (!ObjectId.isValid(bookId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid book ID.",
+        message: "Valid book ID and borrower email are required.",
       });
     }
 
     const normalizedEmail = borrowerEmail.trim().toLowerCase();
 
+    // Find active borrow record
     const borrowRecord = await borrowsCollection.findOne({
       bookId: String(bookId),
       borrowerEmail: normalizedEmail,
@@ -526,14 +530,25 @@ app.post("/return-book", async (req, res) => {
       });
     }
 
+    // Increase available copies
     const copyResult = await booksCollection.updateOne(
-      { _id: new ObjectId(bookId) },
-      { $inc: { totalCopies: 1 } }
+      {
+        _id: new ObjectId(bookId),
+      },
+      {
+        $inc: {
+          totalCopies: 1,
+        },
+      }
     );
 
+    // Rollback if book does not exist
     if (copyResult.matchedCount === 0) {
       await borrowsCollection.updateOne(
-        { _id: borrowRecord._id },
+        {
+          _id: borrowRecord._id,
+          returned: true,
+        },
         {
           $set: { returned: false },
           $unset: { returnedAt: "" },
@@ -546,69 +561,25 @@ app.post("/return-book", async (req, res) => {
       });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "Book returned successfully.",
-    });
-  } catch (error) {
-    console.error("❌ Return Book Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Failed to return book.",
-    });
-  }
-});
-
-// =====================================
-// DECREMENT COPIES
-// =====================================
-app.patch("/decrement-copies/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid book ID.",
-      });
-    }
-
-    const result = await booksCollection.updateOne(
-      {
-        _id: new ObjectId(id),
-        totalCopies: { $gt: 0 },
-      },
-      {
-        $inc: { totalCopies: -1 },
-      }
-    );
-
-    if (result.modifiedCount === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Book not found or no copies left.",
-      });
-    }
-
+    // Get updated book
     const updatedBook = await booksCollection.findOne({
-      _id: new ObjectId(id),
+      _id: new ObjectId(bookId),
     });
 
     return res.status(200).json({
       success: true,
+      message: "Book returned successfully!",
       totalCopies: updatedBook.totalCopies,
     });
   } catch (error) {
-    console.error("❌ Decrement Copies Error:", error);
+    console.error("Return Book Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: "Failed to return book.",
     });
   }
 });
-
 // =====================================
 // HOME ROUTE
 // =====================================
